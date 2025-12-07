@@ -1,7 +1,8 @@
 # lxNetSpeedMonitor
-Show network speed by interface in lxpanel. Inspired by [NetSpeedMonitor](https://netspeedmonitor.net)
+Show network speed by interface in lxpanel. Inspired by [NetSpeedMonitor](https://netspeedmonitor.en.softonic.com/)
 
-![configuration](gallery/config.png)
+![configuration](gallery/config.png)  
+![configuration](gallery/config2.png)
 # building and installing
 Install/update build dependencies.  
 Arch:  
@@ -12,35 +13,24 @@ Debian/Ubuntu and its derivatives:
 
 If you are a cool kid not using the above distros, you probably know how to install the above development packages for your distro!
 
-Build with CMake  
-`cmake -S . -B build`  
-`cmake --build build`
-
-Find the plugins location:  
-Usually:  
-`/usr/lib/lxpanel/plugins` on Arch  
-`/usr/lib/<PROCESSOR_ARCHITECTURE>/lxpanel/plugins` on Debian/Ubuntu and its derivatives  
-**PROCESSOR_ARCHITECTURE can be x86_64 or i686**
-
-The folder should at least contain several .so files which are the plugins like `weather.so, volume.so`, if not find it manually  
-
-`find / 2>/dev/null -wholename "*/lxpanel/plugins"`  
-This may take some time depending on the size of your file system  
-
-Copy the build file to this directory:  
-`sudo cp build/netspeedmonitor.so <PLUGINS_DIRECTORY>`  
+Build and install with CMake:
+```
+# -DCMAKE_INSTALL_PREFIX is important for multiarch, especially on debian
+cmake -S . -B build -DCMAKE_INSTALL_PREFIX=/usr 
+cmake --build build
+sudo cmake --install build
+```
 
 Restart lxpanel:  
 `lxpanelctl restart`
 
-# usage
+# usage and configuration
 - Right click on panel then Panel Settings
 - Navigate to Panel Applets then click Add
-- Double click NetSpeedMonitor
-
-# configuration
+- Double click NetSpeedMonitor or Click Add
 - Right click the applet in the panel then settings
-- Type in the interface you want to track usage
-
-
+- Type in the interface you want to track usage (use `ip link` to check)
+- Transmit and Receive prefix is the text prefixed before the speed. It can be freely customized including an empty string which looks more cleaner. It defaults to U for transmit and D for receive
+- If using the default vertical orientation, you might have to increase your panel height in panel settings  if you can't see the entire widget (i.e. only upload is visible). A panel height of 45 works nice. Also have 0 spacing in the config
+- If using the horizontal orientation, you can add some spacing to make it look better
 

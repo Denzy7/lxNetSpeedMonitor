@@ -1,27 +1,29 @@
 #include <lxpanel/plugin.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 typedef struct
 {
-    GtkWidget* label_tx;  //tx
-    GtkWidget* label_rx;  //rx
+    GtkWidget* label_tx_rx[2];  //rx tx
     char data[100];    //reusable string buffer
     guint timer;        //Timer
+    GtkWidget* vbox;
 
     char* iface;
+    char* label_tx_rx_prefix[2];
 
     //switch to size_t? ...
-    guint last_rx;
-    guint last_tx;
+    guint last_tx_rx[2];
 
     int rateunit;
     gboolean preferbitpersec;
+    int postfirstlaunch;
+    int spacing;
+    int preferhorizontal;
 
     config_setting_t* settings;
 
 }netspeedmon;
-
-const char* catlookup="cat /sys/class/net/%s/statistics/%s";
 
 const char* rateunits[]=
 {
@@ -30,92 +32,61 @@ const char* rateunits[]=
     "KB/s","Kb/s",
     "MB/s","Mb/s",
 };
+const char* tx_rx_str[] = { "tx", "rx", };
 #define ARY_SZ(arr) sizeof(arr) / sizeof(arr[0])
 static gboolean update_cmd(netspeedmon* plugin)
 {
     //deltas
-    double dlt_tx_human=0.0, dlt_rx_human=0.0;
-    guint dlt_tx=0, dlt_rx=0;
-    int notfound=0;
+    gdouble delta_tx_rx_human[2];
+    guint tx_rx[2];
+    guint delta_tx_rx[2];
+    char tx_rx_text[2][64];
+    FILE* fp_cmd;
+    int emptyprefix = 0;
 
-    snprintf(plugin->data,sizeof (plugin->data),catlookup,plugin->iface,"rx_bytes");
-    FILE* fp_rx = popen(plugin->data, "r");
+    memset(tx_rx, 0, sizeof(tx_rx));
 
-    snprintf(plugin->data,sizeof (plugin->data),catlookup,plugin->iface,"tx_bytes");
-    FILE* fp_tx = popen(plugin->data, "r");
-
-    if(fp_rx && fp_tx)
+    for(int i = 0; i < 2; i++)
     {
-        //read tx
-        memset(plugin->data, 0, sizeof(plugin->data));
-        while(fgets(plugin->data, sizeof(plugin->data), fp_tx))
+        snprintf(plugin->data, sizeof (plugin->data),
+                "cat /sys/class/net/%s/statistics/%s_bytes", plugin->iface, tx_rx_str[i]);
+        fp_cmd = popen(plugin->data, "r");
+        if(!fp_cmd)
         {
-            continue;
+            g_fprintf(stderr, "cannot popen %s\n", plugin->data);
+            return TRUE;
         }
-
-        if(!pclose(fp_tx))
+        while(fgets(plugin->data, sizeof(plugin->data), fp_cmd))
+            continue;;
+        if(!pclose(fp_cmd))
         {
-            guint tx = 0;
-            sscanf(plugin->data, "%u", &tx);
-            dlt_tx = tx - plugin->last_tx;
-            plugin->last_tx = tx;
-        }else
-        {
-            notfound=1;
+            sscanf(plugin->data, "%u", &tx_rx[i]);
+            if(plugin->last_tx_rx[i] == 0)
+                plugin->last_tx_rx[i] = tx_rx[i];
+            delta_tx_rx[i] = tx_rx[i] - plugin->last_tx_rx[i];
+            plugin->last_tx_rx[i] = tx_rx[i];
+            delta_tx_rx_human[i] = delta_tx_rx[i];
+            for (int j = 0; j < plugin->rateunit; j++)
+            {
+                delta_tx_rx_human[i] /= 1024.0;
+            }
+            if(plugin->preferbitpersec)
+                delta_tx_rx_human[i] *= 8.0;
+
+            snprintf(tx_rx_text[i], sizeof(tx_rx_text[i]),
+                    "%6.1f", delta_tx_rx_human[i]);
+        }else {
+            snprintf(tx_rx_text[i], sizeof(tx_rx_text[i]), "...");
         }
-
-        //read rx
-        memset(plugin->data, 0, sizeof(plugin->data));
-        while(fgets(plugin->data, sizeof(plugin->data), fp_rx))
-        {
-            continue;
-        }
-
-        if(!pclose(fp_rx))
-        {
-            guint rx = 0;
-            sscanf(plugin->data, "%u", &rx);
-            dlt_rx = rx - plugin->last_rx;
-            plugin->last_rx = rx;
-        }
-
-        dlt_tx_human=(double)dlt_tx;
-        dlt_rx_human=(double)dlt_rx;
-
-        //convert
-        for (int i=0; i<plugin->rateunit; i++) {
-            dlt_tx_human=(double)dlt_tx_human/1024.0;
-            dlt_rx_human=(double)dlt_rx_human/1024.0;
-        }
-
-        if(plugin->preferbitpersec)
-        {
-            dlt_tx_human*=8.0;
-            dlt_rx_human*=8.0;
-        }
-    }
-
-    //clear then do final print
-    memset(plugin->data, 0, sizeof(plugin->data));
-    if (notfound) {
+        if(plugin->label_tx_rx_prefix[i] == NULL || (plugin->label_tx_rx_prefix[i] && !strlen(plugin->label_tx_rx_prefix[i])))
+            emptyprefix = 1;
         snprintf(plugin->data,sizeof(plugin->data),
-                 "U : %s %s",
-                 "...",rateunits[2*plugin->rateunit+plugin->preferbitpersec]);
-        gtk_label_set_text((GtkLabel*)plugin->label_tx, plugin->data);
-        snprintf(plugin->data,sizeof(plugin->data),
-                 "D : %s %s",
-                 "...",rateunits[2*plugin->rateunit+plugin->preferbitpersec]);
-        gtk_label_set_text((GtkLabel*)plugin->label_rx, plugin->data);
-    }else
-    {
-        snprintf(plugin->data,sizeof(plugin->data),
-                 "U : %.1f %s",
-                 dlt_tx_human,rateunits[2*plugin->rateunit+plugin->preferbitpersec]);
-        gtk_label_set_text((GtkLabel*)plugin->label_tx, plugin->data);
-        snprintf(plugin->data,sizeof(plugin->data),
-                 "D : %.1f %s",
-                 dlt_rx_human,rateunits[2*plugin->rateunit+plugin->preferbitpersec]);
-        gtk_label_set_text((GtkLabel*)plugin->label_rx, plugin->data);
+                "%s%s%s %s",
+                    emptyprefix ? "" : plugin->label_tx_rx_prefix[i],
+                    emptyprefix ? "" : ": ",
+                tx_rx_text[i],
+                rateunits[2*plugin->rateunit+plugin->preferbitpersec]);
+        gtk_label_set_text((GtkLabel*)plugin->label_tx_rx[i], plugin->data);
     }
     return TRUE;
 }
@@ -124,51 +95,69 @@ void netspeed_delete(gpointer user_data)
 {
     netspeedmon* nu= (netspeedmon*)user_data;
     g_source_remove(nu->timer);
+    g_free(nu->label_tx_rx_prefix[0]);
+    g_free(nu->label_tx_rx_prefix[1]);
     g_free(nu->iface);
     g_free(nu);
 }
 GtkWidget* netspeed_new(LXPanel* panel, config_setting_t* settings)
 {
     //Alloc struct
+    const char* tmp;
+    const char* tx_rx_prefix_default[] = {"U", "D"};
     netspeedmon* plugin = g_new0(netspeedmon, 1);
+    GtkWidget* vbox = NULL,* evbox = NULL;
+    GtkOrientation orientation = GTK_ORIENTATION_VERTICAL;
+
     memset(plugin, 0, sizeof(netspeedmon));
     plugin->settings=settings;
-
-    //Update count
-    plugin->timer = g_timeout_add_seconds(1,(GSourceFunc)update_cmd, plugin);
-
-    //labels
-    GtkWidget* label = NULL,* vbox = NULL,* evbox = NULL;
-
-    vbox = gtk_vbox_new(TRUE, 1);
-
-    label = gtk_label_new("U : ...");
-    gtk_misc_set_alignment(GTK_MISC(label), 0.0f, 0.5f);
-    plugin->label_tx = label;
-    gtk_box_pack_start(GTK_BOX(vbox), label, TRUE, TRUE, 0);
-
-    label = gtk_label_new("D : ...");
-    gtk_misc_set_alignment(GTK_MISC(label), 0.0f, 0.5f);
-    plugin->label_rx = label;
-    gtk_box_pack_start(GTK_BOX(vbox), label, TRUE, TRUE, 0);
-
-    const char* tmp;
+    config_setting_lookup_int(settings,"postfirstlaunch",&plugin->postfirstlaunch);
     if (!config_setting_lookup_string(settings, "iface", &tmp))
         tmp = "wlan0";
     plugin->iface=g_strdup(tmp);
+    for(int i = 0; i < 2; i++)
+    {
+        snprintf(plugin->data, sizeof(plugin->data), "prefix_%s", tx_rx_str[i]);
+        if (!config_setting_lookup_string(settings, plugin->data, &tmp)){
+            if(plugin->postfirstlaunch) /* was explicitly set to empty in config */
+                tmp = "";
+            else
+                tmp = tx_rx_prefix_default[i];
+        }
+        plugin->label_tx_rx_prefix[i] = g_strdup(tmp);
+    }
 
     plugin->rateunit=1;
     config_setting_lookup_int(settings,"rateunit",&plugin->rateunit);
     config_setting_lookup_int(settings,"preferbps",&plugin->preferbitpersec);
+    config_setting_lookup_int(settings,"preferhorizontal",&plugin->preferhorizontal);
+    if(plugin->preferhorizontal)
+        plugin->spacing = 5;
+    config_setting_lookup_int(settings,"spacing",&plugin->spacing);
+
+    //Update count
+    plugin->timer = g_timeout_add_seconds(1,(GSourceFunc)update_cmd, plugin);
+
+    if(plugin->preferhorizontal)
+        orientation = GTK_ORIENTATION_HORIZONTAL;
+
+    vbox = gtk_box_new(orientation, plugin->spacing);
+
+    //labels
+    for(int i = 0; i < 2; i++)
+    {
+        plugin->label_tx_rx[i] = gtk_label_new("lxnetspeed");
+        gtk_box_pack_start(GTK_BOX(vbox), plugin->label_tx_rx[i], TRUE, TRUE, 0);
+    }
 
     evbox = gtk_event_box_new();
     //Set width
-    gtk_container_set_border_width(GTK_CONTAINER(evbox), 1);
 
     //add vbox
     gtk_container_add(GTK_CONTAINER(evbox), vbox);
+    plugin->vbox = vbox;
 
-    gtk_widget_set_size_request(evbox, 100, 25);
+    /*gtk_widget_set_size_request(evbox, 100, 25);*/
     //Show all
     gtk_widget_show_all(evbox);
 
@@ -184,6 +173,9 @@ gboolean apply_config(gpointer user_data)
     GtkWidget *p = user_data;
     netspeedmon* nu = lxpanel_plugin_get_data(p);
     config_group_set_string(nu->settings, "iface", nu->iface);
+    config_group_set_string(nu->settings, "prefix_tx", nu->label_tx_rx_prefix[0]);
+    config_group_set_string(nu->settings, "prefix_rx", nu->label_tx_rx_prefix[1]);
+    memset(nu->last_tx_rx, 0, sizeof(nu->last_tx_rx));
 
     int ru= nu->rateunit;
     //guard errors
@@ -194,6 +186,10 @@ gboolean apply_config(gpointer user_data)
     }
     config_group_set_int(nu->settings, "rateunit", ru);
     config_group_set_int(nu->settings, "preferbps", nu->preferbitpersec);
+    config_group_set_int(nu->settings, "spacing", abs(nu->spacing));
+    gtk_box_set_spacing(GTK_BOX(nu->vbox), nu->spacing);
+    config_group_set_int(nu->settings, "preferhorizontal", nu->preferhorizontal);
+    config_group_set_int(nu->settings, "postfirstlaunch", 1);
     return FALSE;
 }
 
@@ -206,6 +202,10 @@ GtkWidget* netspeed_config(LXPanel* panel, GtkWidget* p)
                                    "Interface",&nu->iface,CONF_TYPE_STR,
                                    "Rate unit (None=0, K=1, M=2)",&nu->rateunit,CONF_TYPE_INT,
                                    "Prefer bits per sec",&nu->preferbitpersec,CONF_TYPE_BOOL,
+                                   "Transmit Prefix",&nu->label_tx_rx_prefix[0],CONF_TYPE_STR,
+                                   "Receive Prefix",&nu->label_tx_rx_prefix[1],CONF_TYPE_STR,
+                                   "Spacing",&nu->spacing,CONF_TYPE_INT,
+                                   "Prefer horizontal orientation (requires panel restart)",&nu->preferhorizontal,CONF_TYPE_BOOL,
                                    NULL
                                    );
     return dlg;
@@ -219,5 +219,5 @@ LXPanelPluginInit fm_module_init_lxpanel_gtk =
     .name = "NetSpeedMonitor",
     .description = "Show network speed",
     .new_instance = netspeed_new,
-    .config = netspeed_config
+    .config = netspeed_config,
 };
