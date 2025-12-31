@@ -5,6 +5,10 @@ include(GNUInstallDirs)
 include(CheckSymbolExists)
 find_package(PkgConfig QUIET)
 
+if(MSYS OR UNIX OR MINGW)
+    add_compile_options("-Wall" "-Wextra" "-Wformat" "-Werror")
+endif()
+
 if(PkgConfig_FOUND)
     pkg_check_modules(lxpanel lxpanel)
     if(lxpanel_LIBRARIES)

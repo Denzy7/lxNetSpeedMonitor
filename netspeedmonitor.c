@@ -104,6 +104,7 @@ GtkWidget* netspeed_new(LXPanel* panel, config_setting_t* settings)
 {
     //Alloc struct
     const char* tmp;
+    (void)panel;
     const char* tx_rx_prefix_default[] = {"U", "D"};
     netspeedmon* plugin = g_new0(netspeedmon, 1);
     GtkWidget* vbox = NULL,* evbox = NULL;
@@ -186,7 +187,7 @@ gboolean apply_config(gpointer user_data)
 
     int ru= nu->rateunit;
     //guard errors
-    if (nu->rateunit > ARY_SZ(rateunits)/2-1 || nu->rateunit<0) {
+    if (nu->rateunit > (int)(ARY_SZ(rateunits)/2-1) || nu->rateunit<0) {
         //did you mean KB/s?
         ru=1;
         nu->rateunit=ru;
