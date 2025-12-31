@@ -141,7 +141,14 @@ GtkWidget* netspeed_new(LXPanel* panel, config_setting_t* settings)
     if(plugin->preferhorizontal)
         orientation = GTK_ORIENTATION_HORIZONTAL;
 
+#ifdef HAVE_GTK_BOX
     vbox = gtk_box_new(orientation, plugin->spacing);
+#else
+    if(orientation == GTK_ORIENTATION_VERTICAL)
+        vbox = gtk_vbox_new(TRUE, plugin->spacing);
+    else if(orientation == GTK_ORIENTATION_HORIZONTAL)
+        vbox = gtk_hbox_new(TRUE, plugin->spacing);
+#endif
 
     //labels
     for(int i = 0; i < 2; i++)
